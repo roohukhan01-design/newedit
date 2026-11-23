@@ -1,0 +1,118 @@
+name: Build Roohu ClipForge APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Android project layout
+        shell: bash
+        run: |
+          set -e
+          required=(
+            settings.gradle build.gradle gradle.properties app/build.gradle
+            app/src/main/AndroidManifest.xml
+            app/src/main/java/com/roohu/clipforge/MainActivity.java
+            app/src/main/assets/Roohu-ClipForge.html
+            app/src/main/res/layout/activity_main.xml
+            shared/core/validate.js
+            shared/test/validate.test.js
+            shared/test/projects.test.js
+            shared/test/subtitles.test.js
+          )
+          for f in "${required[@]}"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing or empty required file: $f"
+              exit 1
+            fi
+          done
+          echo "Android project layout looks complete."
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Run JavaScript validation tests
+        run: |
+          node shared/test/validate.test.js
+          node shared/test/projects.test.js
+          node shared/test/subtitles.test.js
+
+      - name: Download offline speech models
+        shell: bash
+        run: |
+          set -e
+          cd app/src/main/assets
+          curl -fL --retry 3 --retry-delay 2 -o model-en.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          unzip -q model-en.zip
+          mv vosk-model-small-en-us-0.15 model-en
+          rm model-en.zip
+          curl -fL --retry 3 --retry-delay 2 -o model-hi.zip https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip
+          unzip -q model-hi.zip
+          mv vosk-model-small-hi-0.22 model-hi
+          rm model-hi.zip
+          test -d model-en && test -d model-hi
+
+      - name: Download optional display fonts
+        shell: bash
+        run: |
+          set +e
+          mkdir -p app/src/main/assets/fonts
+          cd app/src/main/assets/fonts
+          base=https://raw.githubusercontent.com/google/fonts/main/ofl
+          curl -fsSL "$base/anton/Anton-Regular.ttf" -o Anton-Regular.ttf
+          curl -fsSL "$base/bebasneue/BebasNeue-Regular.ttf" -o BebasNeue-Regular.ttf
+          curl -fsSL "$base/bangers/Bangers-Regular.ttf" -o Bangers-Regular.ttf
+          curl -fsSL "$base/archivoblack/ArchivoBlack-Regular.ttf" -o ArchivoBlack-Regular.ttf
+          curl -fsSL "$base/michroma/Michroma-Regular.ttf" -o Michroma-Regular.ttf
+          curl -fsSL "$base/bungee/Bungee-Regular.ttf" -o Bungee-Regular.ttf
+          curl -fsSL "$base/luckiestguy/LuckiestGuy-Regular.ttf" -o LuckiestGuy-Regular.ttf
+          curl -fsSL "$base/russoone/RussoOne-Regular.ttf" -o RussoOne-Regular.ttf
+          curl -fsSL "$base/blackopsone/BlackOpsOne-Regular.ttf" -o BlackOpsOne-Regular.ttf
+          curl -fsSL "$base/tajawal/Tajawal-Black.ttf" -o Tajawal-Black.ttf
+          curl -fsSL "$base/poppins/Poppins-Black.ttf" -o Poppins-Black.ttf
+          curl -fsSL "$base/poppins/Poppins-ExtraBold.ttf" -o Poppins-ExtraBold.ttf
+          echo "Optional fonts downloaded where available; app has system-font fallbacks."
+          exit 0
+
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK output
+        shell: bash
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roohu-ClipForge-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
