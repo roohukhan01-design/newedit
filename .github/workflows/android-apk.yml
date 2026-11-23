@@ -26,6 +26,7 @@ jobs:
             app/src/main/AndroidManifest.xml
             app/src/main/java/com/roohu/clipforge/MainActivity.java
             app/src/main/assets/Roohu-ClipForge.html
+            app/src/main/assets/validate.js
             app/src/main/res/layout/activity_main.xml
             shared/core/validate.js
             shared/test/validate.test.js
@@ -38,7 +39,8 @@ jobs:
               exit 1
             fi
           done
-          echo "Android project layout looks complete."
+          cmp -s shared/core/validate.js app/src/main/assets/validate.js
+          echo "Android project layout and bundled validation script are consistent."
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
